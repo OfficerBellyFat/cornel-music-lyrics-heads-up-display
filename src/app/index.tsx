@@ -1,98 +1,230 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
-
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
-  return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
-}
+import * as ScreenOrientation from "expo-screen-orientation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Button, FlatList, StyleSheet, Text, View } from "react-native";
+import { PermissionsAndroid, Platform } from "react-native";
 
 export default function HomeScreen() {
+  interface LyricLine {
+    timeInMs: number;
+    text: string;
+  }
+
+  const flatListRef = useRef<FlatList>(null);
+  const itemHeights = useRef<Record<number, number>>({});
+  const listHeight = useRef(0);
+
+  const [plainLyrics, setPlainLyrics] = useState("");
+  const [syncedLyrics, setSyncedLyrics] = useState("");
+  const [parsedLyrics, setParsedLyrics] = useState<LyricLine[]>([]);
+  const [positionMs, setPositionMs] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [artistName, setArtistName] = useState("");
+  const [trackName, setTrackName] = useState("");
+  const [getApiRoute, setGetApiRoute] = useState("");
+
+  const activeLineIndex = useMemo(() => {
+    return parsedLyrics.reduce((last, line, i) => {
+      return line.timeInMs <= positionMs ? i : last;
+    }, 0);
+  }, [positionMs, parsedLyrics]);
+
+  const setOrientationToLandscape = async () => {
+    await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT);
+  };
+
+  const assembleGETLink = (trackName: string, artistName: string) => {
+    const formattedTrackName = encodeURI(trackName).replace(/\//gi, "%2F");
+    const formattedArtistName = encodeURI(artistName).replace(/\//gi, "%2F");
+
+    console.log(formattedTrackName);
+    console.log(formattedArtistName);
+
+    setGetApiRoute(
+      "https://lrclib.net/api/get?track_name=" + formattedTrackName + "&artist_name=" + formattedArtistName,
+    );
+  };
+
+  const parseSyncedLyrics = (rawString: string) => {
+    console.log(rawString);
+
+    const lines = rawString.trim().split(/\r?\n/);
+    console.log("Lyrics parsed.");
+
+    return lines
+      .map((line: string) => {
+        const match = line.trim().match(/^\[(\d{2}):(\d{2})\.(\d{2,3})\]\s*(.*)$/);
+        if (!match) return null;
+        const [, min, sec, ms, text] = match;
+        const timeInMs = +min * 60 * 1000 + +sec * 1000 + +ms.padEnd(3, "0");
+        return { timeInMs, text: text.trim() } as LyricLine;
+      })
+      .filter((x): x is LyricLine => x !== null);
+  };
+
+  const fetchAPIData = async () => {
+    console.log(trackName);
+    if (!getApiRoute) return;
+
+    setLoading(true);
+    setError(null);
+    try {
+      console.log("fetching API data:", getApiRoute);
+      const result = await fetch(getApiRoute);
+      const data = await result.json();
+      setPlainLyrics(data.plainLyrics);
+      setSyncedLyrics(data.syncedLyrics);
+
+      const parsed = parseSyncedLyrics(data.syncedLyrics ?? "");
+      setParsedLyrics(parsed);
+      setPositionMs(0);
+      console.log("parsed lyrics: ", parsed);
+    } catch (e) {
+      setError(String(e));
+      console.warn(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // debug music change
+  const changeMusic = () => {
+    setTrackName("Bad Day");
+    setArtistName("Daniel Powter");
+  };
+
+  const androidPermissionRequest = async () => {
+    if (Platform.OS === "android" && Platform.Version >= 33) {
+      await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+    }
+  };
+
+  // app setup on runtime
+  useEffect(() => {
+    setOrientationToLandscape();
+    androidPermissionRequest();
+    setTrackName("shoot to thrill"); //TODO debugging
+    setArtistName("AC/DC"); //TODO debugging
+  }, []);
+
+  // assemble link
+  useEffect(() => {
+    if (!trackName || !artistName) return;
+    assembleGETLink(trackName, artistName);
+  }, [trackName, artistName]);
+
+  // fetch API data
+  useEffect(() => {
+    fetchAPIData();
+  }, [getApiRoute]);
+
+  // auto scroll
+  useEffect(() => {
+    if (!flatListRef.current || parsedLyrics.length === 0) return;
+
+    let offset = 0;
+    for (let i = 0; i < activeLineIndex; i++) {
+      offset += itemHeights.current[i] ?? 0;
+    }
+
+    const activeItemHeight = itemHeights.current[activeLineIndex] ?? 0;
+    const centeredOffset = offset - listHeight.current / 2 + activeItemHeight / 2;
+
+    flatListRef.current.scrollToOffset({
+      offset: Math.max(0, centeredOffset),
+      animated: true,
+    });
+  }, [activeLineIndex]);
+
+  // mock timer
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setPositionMs((prev) => prev + 500);
+    }, 100);
+
+    return () => clearInterval(timer);
+  }, []);
+
   return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
-
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
-
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
+    <View style={styles.mainContainer}>
+      <View style={styles.lyricsContainer}>
+        {loading ? (
+          <View style={{ justifyContent: "center", alignItems: "center" }}>
+            <Text style={styles.mainText}>Loading Lyrics…</Text>
+            <View style={styles.reverseXScale}>
+              <Text style={styles.mainText}>Loading Lyrics…</Text>
+            </View>
+          </View>
+        ) : error ? (
+          <Text style={[styles.mainText, { color: "red" }]}>{error}</Text>
+        ) : parsedLyrics.length === 0 ? (
+          <View style={{ justifyContent: "center", alignItems: "center" }}>
+            <Text style={styles.mainText}>No synced lyrics found.</Text>
+          </View>
+        ) : (
+          <FlatList
+            ref={flatListRef}
+            data={parsedLyrics}
+            keyExtractor={(_: any, i: any) => i.toString()}
+            initialNumToRender={parsedLyrics.length}
+            onLayout={(e) => {
+              listHeight.current = e.nativeEvent.layout.height;
+            }}
+            renderItem={({ item, index }) => (
+              <View style={styles.reverseXScale}>
+                <Text
+                  onLayout={(e) => {
+                    itemHeights.current[index] = e.nativeEvent.layout.height;
+                  }}
+                  style={index === activeLineIndex ? styles.lyricsText : styles.inactiveLyricsText}
+                >
+                  {item.text}
+                </Text>
+              </View>
+            )}
           />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
-
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
-    </ThemedView>
+        )}
+        {/* <Text style={styles.lyricsText}>
+          {plainLyrics}
+        </Text> */}
+      </View>
+      <Button title="Change Music" onPress={changeMusic}></Button>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
+  mainContainer: {
+    justifyContent: "center",
+    flexDirection: "column",
+    backgroundColor: "black",
+    height: "100%",
   },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
+
+  lyricsContainer: {
+    marginLeft: 60,
+    marginRight: 60,
+    marginTop: 20,
   },
-  heroSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
+
+  mainText: {
+    color: "white",
+    fontSize: 30,
   },
-  title: {
-    textAlign: 'center',
+
+  lyricsText: {
+    color: "#90ee90",
+    fontSize: 60,
   },
-  code: {
-    textTransform: 'uppercase',
+
+  inactiveLyricsText: {
+    color: "#90ee907e",
+    fontSize: 50,
+    marginTop: 10,
   },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
+
+  reverseXScale: {
+    transform: [{ scaleX: -1 }],
   },
 });

@@ -2,13 +2,14 @@
   "expo": {
     "name": "music-lyrics-heads-up-display",
     "slug": "music-lyrics-heads-up-display",
-    "version": "1.0.0",
-    "orientation": "portrait",
+    "version": "0.0.1",
+    "orientation": "landscape",
     "icon": "./assets/images/icon.png",
     "scheme": "musiclyricsheadsupdisplay",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.cornelius.musiclyricsheadsupdisplay"
     },
     "android": {
       "adaptiveIcon": {
@@ -17,7 +18,8 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.cornelius.musiclyricsheadsupdisplay"
     },
     "web": {
       "output": "static",
