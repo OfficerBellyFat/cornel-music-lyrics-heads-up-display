@@ -143,6 +143,8 @@ export default function HomeScreen() {
         }
       },
     );
+
+    return () => mediaSubscription.remove();
   }, []);
 
   // user returning from system settings
