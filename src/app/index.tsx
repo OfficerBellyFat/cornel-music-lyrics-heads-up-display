@@ -1,7 +1,8 @@
 import * as ScreenOrientation from "expo-screen-orientation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, FlatList, StyleSheet, Text, View } from "react-native";
-import { PermissionsAndroid, Platform } from "react-native";
+import { PermissionsAndroid, Platform, NativeModules, DeviceEventEmitter } from "react-native";
+const { MediaSessionModule } = NativeModules;
 
 export default function HomeScreen() {
   interface LyricLine {
@@ -12,6 +13,12 @@ export default function HomeScreen() {
   const flatListRef = useRef<FlatList>(null);
   const itemHeights = useRef<Record<number, number>>({});
   const listHeight = useRef(0);
+  const currentTrackRef = useRef("");
+  const lastKnownPosition = useRef({
+    positionMs: 0,
+    timestamp: Date.now(),
+    isPlaying: false,
+  });
 
   const [plainLyrics, setPlainLyrics] = useState("");
   const [syncedLyrics, setSyncedLyrics] = useState("");
@@ -19,10 +26,10 @@ export default function HomeScreen() {
   const [positionMs, setPositionMs] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   const [artistName, setArtistName] = useState("");
   const [trackName, setTrackName] = useState("");
   const [getApiRoute, setGetApiRoute] = useState("");
+  const [musicPlaying, setMusicPlaying] = useState(false);
 
   const activeLineIndex = useMemo(() => {
     return parsedLyrics.reduce((last, line, i) => {
@@ -78,7 +85,7 @@ export default function HomeScreen() {
 
       const parsed = parseSyncedLyrics(data.syncedLyrics ?? "");
       setParsedLyrics(parsed);
-      setPositionMs(0);
+      setPositionMs(lastKnownPosition.current.positionMs);
       console.log("parsed lyrics: ", parsed);
     } catch (e) {
       setError(String(e));
@@ -100,12 +107,52 @@ export default function HomeScreen() {
     }
   };
 
+  const checkNotificationPermission = async () => {
+    const granted = await MediaSessionModule.isNotificationAccessGranted();
+    if (!granted) {
+      MediaSessionModule.openNotificationSettings();
+    }
+  };
+
   // app setup on runtime
   useEffect(() => {
     setOrientationToLandscape();
     androidPermissionRequest();
-    setTrackName("shoot to thrill"); //TODO debugging
-    setArtistName("AC/DC"); //TODO debugging
+    checkNotificationPermission();
+    // setTrackName("shoot to thrill"); //TODO debugging
+    // setArtistName("AC/DC"); //TODO debugging
+  }, []);
+
+  // listen to service emits
+  useEffect(() => {
+    const mediaSubscription = DeviceEventEmitter.addListener(
+      "OnMediaStateChanged",
+      (event: { title: string; artist: string; positionMs: number; isPlaying: boolean }) => {
+        lastKnownPosition.current = {
+          positionMs: event.positionMs,
+          timestamp: Date.now(),
+          isPlaying: event.isPlaying,
+        };
+
+        setMusicPlaying(event.isPlaying);
+
+        if (event.title !== currentTrackRef.current) {
+          currentTrackRef.current = event.title;
+          setTrackName(event.title);
+          setArtistName(event.artist);
+        }
+      },
+    );
+  }, []);
+
+  // user returning from system settings
+  useEffect(() => {
+    const resumeSubscription = DeviceEventEmitter.addListener("OnAppResume", async () => {
+      const granted = await MediaSessionModule.isNotificationAccessGranted();
+      console.log("permission granted: " + granted);
+    });
+
+    return () => resumeSubscription.remove();
   }, []);
 
   // assemble link
@@ -138,18 +185,39 @@ export default function HomeScreen() {
   }, [activeLineIndex]);
 
   // mock timer
+  // useEffect(() => {
+  //   const timer = setInterval(() => {
+  //     setPositionMs((prev) => prev + 500);
+  //   }, 100);
+
+  //   return () => clearInterval(timer);
+  // }, []);
+
+  // position interpolation timer
   useEffect(() => {
+    if (!musicPlaying) return;
+
     const timer = setInterval(() => {
-      setPositionMs((prev) => prev + 500);
-    }, 100);
+      const { positionMs: last, timestamp, isPlaying } = lastKnownPosition.current;
+      if (isPlaying) {
+        setPositionMs(last + (Date.now() - timestamp));
+      }
+    }, 250);
 
     return () => clearInterval(timer);
-  }, []);
+  }, [musicPlaying]);
 
   return (
     <View style={styles.mainContainer}>
       <View style={styles.lyricsContainer}>
-        {loading ? (
+        {!musicPlaying ? (
+          <View style={{ justifyContent: "center", alignItems: "center" }}>
+            <Text style={styles.mainText}>No music is currently playing.</Text>
+            <View style={styles.reverseXScale}>
+              <Text style={styles.mainText}>No music is currently playing.</Text>
+            </View>
+          </View>
+        ) : loading ? (
           <View style={{ justifyContent: "center", alignItems: "center" }}>
             <Text style={styles.mainText}>Loading Lyrics…</Text>
             <View style={styles.reverseXScale}>

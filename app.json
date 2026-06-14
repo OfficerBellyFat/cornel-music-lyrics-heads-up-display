@@ -1,15 +1,15 @@
 {
   "expo": {
-    "name": "music-lyrics-heads-up-display",
-    "slug": "music-lyrics-heads-up-display",
+    "name": "Music Lyrics HUD",
+    "slug": "Music Lyrics HUD",
     "version": "0.0.1",
     "orientation": "landscape",
     "icon": "./assets/images/icon.png",
-    "scheme": "musiclyricsheadsupdisplay",
+    "scheme": "musiclyricshud",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
-      "bundleIdentifier": "com.cornelius.musiclyricsheadsupdisplay"
+      "bundleIdentifier": "undefined"
     },
     "android": {
       "adaptiveIcon": {
@@ -19,7 +19,7 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.cornelius.musiclyricsheadsupdisplay"
+      "package": "undefined"
     },
     "web": {
       "output": "static",
