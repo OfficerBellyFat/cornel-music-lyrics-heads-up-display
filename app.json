@@ -9,7 +9,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
-      "bundleIdentifier": "undefined"
+      "bundleIdentifier": "com.cornelius.musiclyricsheadsupdisplay"
     },
     "android": {
       "adaptiveIcon": {
@@ -19,7 +19,7 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "undefined"
+      "package": "com.cornelius.musiclyricsheadsupdisplay"
     },
     "web": {
       "output": "static",

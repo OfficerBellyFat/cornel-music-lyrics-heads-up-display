@@ -212,14 +212,16 @@ export default function HomeScreen() {
   return (
     <View style={styles.mainContainer}>
       <View style={styles.lyricsContainer}>
-        {!musicPlaying ? (
-          <View style={{ justifyContent: "center", alignItems: "center" }}>
-            <Text style={styles.mainText}>No music is currently playing.</Text>
-            <View style={styles.reverseXScale}>
-              <Text style={styles.mainText}>No music is currently playing.</Text>
-            </View>
-          </View>
-        ) : loading ? (
+        {
+        //   !musicPlaying ? (
+        //   <View style={{ justifyContent: "center", alignItems: "center" }}>
+        //     <Text style={styles.mainText}>No music is currently playing.</Text>
+        //     <View style={styles.reverseXScale}>
+        //       <Text style={styles.mainText}>No music is currently playing.</Text>
+        //     </View>
+        //   </View>
+        // ) :
+          loading ? (
           <View style={{ justifyContent: "center", alignItems: "center" }}>
             <Text style={styles.mainText}>Loading Lyrics…</Text>
             <View style={styles.reverseXScale}>
