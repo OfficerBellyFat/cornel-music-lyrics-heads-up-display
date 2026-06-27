@@ -10,9 +10,11 @@ export default function HomeScreen() {
     text: string;
   }
 
-  const flatListRef = useRef<FlatList>(null);
-  const itemHeights = useRef<Record<number, number>>({});
+  const flatListRef = useRef<FlatList<LyricLine>>(null);
+  const inactiveItemHeights = useRef<Record<number, number>>({});
+  const activeItemHeights = useRef<Record<number, number>>({});
   const listHeight = useRef(0);
+  const parsedLyricsRef = useRef<LyricLine[]>([]);
   const currentTrackRef = useRef("");
   const lastKnownPosition = useRef({
     positionMs: 0,
@@ -30,12 +32,57 @@ export default function HomeScreen() {
   const [trackName, setTrackName] = useState("");
   const [getApiRoute, setGetApiRoute] = useState("");
   const [musicPlaying, setMusicPlaying] = useState(false);
+  const [layoutVersion, setLayoutVersion] = useState(0);
+
+  const ACTIVE_TO_INACTIVE_FONT_RATIO = 60 / 50;
+
+  const upsertHeight = (store: { current: Record<number, number> }, index: number, height: number) => {
+    if (store.current[index] !== height) {
+      store.current[index] = height;
+      setLayoutVersion((value) => value + 1);
+    }
+  };
+
+  const getInactiveHeight = (index: number) =>
+    inactiveItemHeights.current[index] ??
+    (activeItemHeights.current[index] ? activeItemHeights.current[index] / ACTIVE_TO_INACTIVE_FONT_RATIO : 0);
+  const getActiveHeight = (index: number) =>
+    activeItemHeights.current[index] ??
+    (getInactiveHeight(index) > 0 ? getInactiveHeight(index) * ACTIVE_TO_INACTIVE_FONT_RATIO : 0);
+
+  const scrollActiveLineToCenter = (animated: boolean) => {
+    if (!flatListRef.current || parsedLyrics.length === 0) return;
+    flatListRef.current.scrollToIndex({
+      index: activeLineIndex,
+      viewPosition: 0.5,
+      animated,
+    });
+  };
+
+  const computeCenterOffset = (index: number) => {
+    let offset = 0;
+    for (let i = 0; i < index; i++) {
+      offset += getInactiveHeight(i);
+    }
+    const activeItemHeight = getActiveHeight(index);
+    return Math.max(0, offset - listHeight.current / 2 + activeItemHeight / 2);
+  };
 
   const activeLineIndex = useMemo(() => {
     return parsedLyrics.reduce((last, line, i) => {
       return line.timeInMs <= positionMs ? i : last;
     }, 0);
   }, [positionMs, parsedLyrics]);
+
+  useEffect(() => {
+    parsedLyricsRef.current = parsedLyrics;
+  }, [parsedLyrics]);
+
+  useEffect(() => {
+    inactiveItemHeights.current = {};
+    activeItemHeights.current = {};
+    setLayoutVersion((value) => value + 1);
+  }, [syncedLyrics]);
 
   const setOrientationToLandscape = async () => {
     await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT);
@@ -70,7 +117,7 @@ export default function HomeScreen() {
       .filter((x): x is LyricLine => x !== null);
   };
 
-  const fetchAPIData = async () => {
+  const fetchAPIData = async (abortSignal?: AbortSignal) => {
     console.log(trackName);
     if (!getApiRoute) return;
 
@@ -78,8 +125,11 @@ export default function HomeScreen() {
     setError(null);
     try {
       console.log("fetching API data:", getApiRoute);
-      const result = await fetch(getApiRoute);
+      const result = await fetch(getApiRoute, { signal: abortSignal });
       const data = await result.json();
+
+      if (abortSignal?.aborted) return;
+
       setPlainLyrics(data.plainLyrics);
       setSyncedLyrics(data.syncedLyrics);
 
@@ -87,18 +137,23 @@ export default function HomeScreen() {
       setParsedLyrics(parsed);
       setPositionMs(lastKnownPosition.current.positionMs);
       console.log("parsed lyrics: ", parsed);
-    } catch (e) {
+    } catch (e: any) {
+      const wasAborted =
+        abortSignal?.aborted || e?.name === "AbortError" || String(e).includes("aborted");
+      if (wasAborted) {
+        if (parsedLyricsRef.current.length > 0) {
+          setError(null);
+          setLoading(false);
+        }
+        return;
+      }
       setError(String(e));
       console.warn(e);
     } finally {
-      setLoading(false);
+      if (!abortSignal?.aborted) {
+        setLoading(false);
+      }
     }
-  };
-
-  // debug music change
-  const changeMusic = () => {
-    setTrackName("Bad Day");
-    setArtistName("Daniel Powter");
   };
 
   const androidPermissionRequest = async () => {
@@ -119,8 +174,6 @@ export default function HomeScreen() {
     setOrientationToLandscape();
     androidPermissionRequest();
     checkNotificationPermission();
-    // setTrackName("shoot to thrill"); //TODO debugging
-    // setArtistName("AC/DC"); //TODO debugging
   }, []);
 
   // listen to service emits
@@ -151,6 +204,9 @@ export default function HomeScreen() {
   useEffect(() => {
     const resumeSubscription = DeviceEventEmitter.addListener("OnAppResume", async () => {
       const granted = await MediaSessionModule.isNotificationAccessGranted();
+      if (granted) {
+        MediaSessionModule.refreshCurrentMediaState?.();
+      }
       console.log("permission granted: " + granted);
     });
 
@@ -165,35 +221,22 @@ export default function HomeScreen() {
 
   // fetch API data
   useEffect(() => {
-    fetchAPIData();
+    const controller = new AbortController();
+    fetchAPIData(controller.signal);
+    return () => {
+      controller.abort();
+    };
   }, [getApiRoute]);
 
-  // auto scroll
+  // auto scroll on active line change
   useEffect(() => {
-    if (!flatListRef.current || parsedLyrics.length === 0) return;
+    scrollActiveLineToCenter(true);
+  }, [activeLineIndex, parsedLyrics.length]);
 
-    let offset = 0;
-    for (let i = 0; i < activeLineIndex; i++) {
-      offset += itemHeights.current[i] ?? 0;
-    }
-
-    const activeItemHeight = itemHeights.current[activeLineIndex] ?? 0;
-    const centeredOffset = offset - listHeight.current / 2 + activeItemHeight / 2;
-
-    flatListRef.current.scrollToOffset({
-      offset: Math.max(0, centeredOffset),
-      animated: true,
-    });
-  }, [activeLineIndex]);
-
-  // mock timer
-  // useEffect(() => {
-  //   const timer = setInterval(() => {
-  //     setPositionMs((prev) => prev + 500);
-  //   }, 100);
-
-  //   return () => clearInterval(timer);
-  // }, []);
+  // keep centered view
+  useEffect(() => {
+    scrollActiveLineToCenter(false);
+  }, [layoutVersion]);
 
   // position interpolation timer
   useEffect(() => {
@@ -238,14 +281,29 @@ export default function HomeScreen() {
             data={parsedLyrics}
             keyExtractor={(_: any, i: any) => i.toString()}
             initialNumToRender={parsedLyrics.length}
+            onScrollToIndexFailed={(info) => {
+              flatListRef.current?.scrollToOffset({
+                offset: computeCenterOffset(info.index),
+                animated: true,
+              });
+            }}
             onLayout={(e) => {
-              listHeight.current = e.nativeEvent.layout.height;
+              const newHeight = e.nativeEvent.layout.height;
+              if (listHeight.current !== newHeight) {
+                listHeight.current = newHeight;
+                setLayoutVersion((value) => value + 1);
+              }
             }}
             renderItem={({ item, index }) => (
-              <View style={styles.reverseXScale}>
+              <View>
                 <Text
                   onLayout={(e) => {
-                    itemHeights.current[index] = e.nativeEvent.layout.height;
+                    const height = e.nativeEvent.layout.height;
+                    if (index === activeLineIndex) {
+                      upsertHeight(activeItemHeights, index, height);
+                    } else {
+                      upsertHeight(inactiveItemHeights, index, height);
+                    }
                   }}
                   style={index === activeLineIndex ? styles.lyricsText : styles.inactiveLyricsText}
                 >
@@ -255,11 +313,7 @@ export default function HomeScreen() {
             )}
           />
         )}
-        {/* <Text style={styles.lyricsText}>
-          {plainLyrics}
-        </Text> */}
       </View>
-      <Button title="Change Music" onPress={changeMusic}></Button>
     </View>
   );
 }

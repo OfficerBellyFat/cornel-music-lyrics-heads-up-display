@@ -56,6 +56,11 @@ class MediaSessionModule(private val reactApplicationContext: ReactApplicationCo
     }
 
     @ReactMethod
+    fun refreshCurrentMediaState() {
+        MediaListenerService.instance?.refreshCurrentMediaState()
+    }
+
+    @ReactMethod
     fun addListener(eventName: String) {}
 
     @ReactMethod
@@ -133,6 +138,18 @@ class MediaListenerService : NotificationListenerService() {
         mediaSessionManager?.addOnActiveSessionsChangedListener(sessionListener, component)
         val currentSessions = mediaSessionManager?.getActiveSessions(component)
         handleSessionChange(currentSessions)
+    }
+
+    fun refreshCurrentMediaState() {
+        val component = ComponentName(this, MediaListenerService::class.java)
+        val currentSessions = mediaSessionManager?.getActiveSessions(component)
+
+        if (!currentSessions.isNullOrEmpty()) {
+            handleSessionChange(currentSessions)
+            return
+        }
+
+        emitMediaState(activeController?.metadata, activeController?.playbackState)
     }
 
     private fun handleSessionChange(controllers: List<MediaController>?) {
