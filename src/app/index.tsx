@@ -33,6 +33,7 @@ export default function HomeScreen() {
   const [getApiRoute, setGetApiRoute] = useState("");
   const [musicPlaying, setMusicPlaying] = useState(false);
   const [layoutVersion, setLayoutVersion] = useState(0);
+  const [mirrorLyricsView, setMirrorLyricsView] = useState(false);
 
   const ACTIVE_TO_INACTIVE_FONT_RATIO = 60 / 50;
 
@@ -295,7 +296,7 @@ export default function HomeScreen() {
               }
             }}
             renderItem={({ item, index }) => (
-              <View>
+              <View style={mirrorLyricsView ? {transform: [{scaleX: -1}]} : {transform: [{scaleX: 1}]}}>
                 <Text
                   onLayout={(e) => {
                     const height = e.nativeEvent.layout.height;
@@ -313,6 +314,15 @@ export default function HomeScreen() {
             )}
           />
         )}
+      </View>
+      <View style={styles.mirrorButton}>
+        <Button onPress={() => {
+          if (!mirrorLyricsView) {
+            setMirrorLyricsView(true);
+          } else {
+            setMirrorLyricsView(false);
+          }
+        }} title="Mirror"></Button>
       </View>
     </View>
   );
@@ -350,5 +360,11 @@ const styles = StyleSheet.create({
 
   reverseXScale: {
     transform: [{ scaleX: -1 }],
+  },
+
+  mirrorButton: {
+    position: "absolute",
+    width: "40%",
+    bottom: 10,
   },
 });
