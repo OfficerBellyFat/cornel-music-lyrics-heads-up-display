@@ -1,56 +1,75 @@
-# !! BOILERPLATE README, TO BE UPDATED !! 👋
+# Music Lyrics HUD
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+An Expo + React Native app that shows synchronized lyrics for the song currently playing on the device, in a large mirrored HUD-style view.
 
-## Get started
+## What the app does
 
-1. Install dependencies
+1. Reads current media metadata and playback state from Android media sessions.
+2. Builds a lyrics query from track title + artist.
+3. Fetches synchronized lyrics from LRCLIB.
+4. Parses timestamped lyric lines and keeps the active line centered while playback advances.
 
-   ```bash
-   npm install
-   ```
+## How it works (stable architecture)
 
-2. Start the app
+This project is intentionally documented by **contracts and data flow**, not line-by-line implementation details, so this README stays valid as code evolves.
 
-   ```bash
-   npx expo start
-   ```
+### 1. Native media state source (Android)
 
-In the output, you'll find options to open the app in a
+- A custom native Android bridge emits media updates to JS (`OnMediaStateChanged`).
+- On app resume, native emits `OnAppResume`, and JS triggers a native media refresh so currently-playing state is re-synced.
+- Notification listener permission is required for media-session access.
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+### 2. JS state and lyrics pipeline
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+- JS receives native media events and stores:
+  - track title
+  - artist
+  - playback position
+  - playing/paused flag
+- The app requests lyrics from LRCLIB using the current track/artist.
+- Timestamped lyrics are parsed into `{ timeInMs, text }[]`.
+- Active line index is derived from playback position and used for:
+  - highlighting active/inactive lines
+  - auto-centering the active row in the list
 
-## Get a fresh project
+### 3. Playback position behavior
 
-When you're ready, run:
+- Native sends periodic position snapshots.
+- JS interpolates position while playback is active for smoother lyric progression.
+- On resume or session changes, position/state are re-synchronized from native.
+
+## Development
 
 ```bash
-npm run reset-project
+npm install
+npm run android
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Other scripts:
 
-### Other setup steps
+- `npm run start` - start Expo dev server
+- `npm run ios` - run iOS build (macOS required)
+- `npm run web` - run web target
+- `npm run lint` - run Expo lint
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+## Platform notes
 
-## Learn more
+- Primary target is Android because media-session listener behavior is implemented natively there.
+- Native Android wiring is generated via Expo prebuild/plugin flow, so `expo prebuild --clean` can recreate required native files.
+- Required user permission: notification listener access for the app.
 
-To learn more about developing your project with Expo, look at the following resources:
+## Credits and open-source acknowledgements
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+- **LRCLIB** - lyrics API provider: <https://lrclib.net>
+- **Expo** - app framework, prebuild/config plugin system: <https://expo.dev>
+- **React Native** - mobile runtime and bridge APIs: <https://reactnative.dev>
+- **Expo Router** - app entry/routing foundation: <https://docs.expo.dev/router/introduction/>
+- **Android MediaSession + NotificationListenerService** - media metadata/playback integration from Android platform APIs
 
-## Join the community
+## Project intent
 
-Join our community of developers creating universal apps.
+This repository focuses on a reliable, real-time lyrics HUD experience:
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- resilient to app resume/background transitions
+- tolerant of async fetch/abort timing
+- stable visual centering for varying lyric line styles/sizes
