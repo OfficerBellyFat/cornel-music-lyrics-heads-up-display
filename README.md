@@ -1,6 +1,11 @@
 # Music Lyrics HUD
 
+Ever drove alone at night, listening to music without knowing the lyrics? Instead of just na-na-na, you can now actually sing the song without pulling your eyes away from the road! 
 An Expo + React Native app that shows synchronized lyrics for the song currently playing on the device, in a large mirrored HUD-style view.
+
+Don't forget to donate!
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/M4O7225X1W)
 
 ## What the app does
 
