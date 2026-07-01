@@ -2,7 +2,7 @@
   "expo": {
     "name": "Music Lyrics HUD",
     "slug": "Music Lyrics HUD",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "orientation": "landscape",
     "icon": "./assets/images/icon.png",
     "scheme": "musiclyricshud",

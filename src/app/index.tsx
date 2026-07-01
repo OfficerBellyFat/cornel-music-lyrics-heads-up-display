@@ -1,4 +1,5 @@
 import * as ScreenOrientation from "expo-screen-orientation";
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, FlatList, StyleSheet, Text, View } from "react-native";
 import { PermissionsAndroid, Platform, NativeModules, DeviceEventEmitter } from "react-native";
@@ -163,9 +164,24 @@ export default function HomeScreen() {
     }
   };
 
+  const requestBatteryOptimizationExemption = async () => {
+    if (Platform.OS !== 'android') return;
+    try {
+      await MediaSessionModule.requestIgnoreBatteryOptimizations();
+    } catch (e) {
+      console.log('battery optimization exemption request failed:', e);
+    }
+  };
+
   const checkNotificationPermission = async () => {
     const granted = await MediaSessionModule.isNotificationAccessGranted();
-    if (!granted) {
+    if (granted) {
+      await AsyncStorage.setItem('notificationPermissionGranted', 'true');
+      return;
+    }
+
+    const previouslyGranted = await AsyncStorage.getItem('notificationPermissionGranted');
+    if (!previouslyGranted) {
       MediaSessionModule.openNotificationSettings();
     }
   };
@@ -197,6 +213,10 @@ export default function HomeScreen() {
         }
       },
     );
+
+    setTimeout(() => {
+      MediaSessionModule.refreshCurrentMediaState?.();
+    }, 500);
 
     return () => mediaSubscription.remove();
   }, []);

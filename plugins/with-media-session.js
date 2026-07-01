@@ -19,6 +19,10 @@ function assertAndroidPackage(config) {
 function moduleSource(pkg) {
   return `package ${pkg}
 
+import android.content.Context
+import android.net.Uri
+import android.os.PowerManager
+import android.provider.Settings
 import android.content.Intent
 import androidx.core.app.NotificationManagerCompat
 import com.facebook.react.bridge.Promise
@@ -41,11 +45,24 @@ class MediaSessionModule(private val reactApplicationContext: ReactApplicationCo
 
     @ReactMethod
     fun isNotificationAccessGranted(promise: Promise) {
-        val enabledPackages = NotificationManagerCompat
-            .getEnabledListenerPackages(reactApplicationContext)
+        val flat = Settings.Secure.getString(reactApplicationContext.contentResolver, "enabled_notification_listeners")
 
-        val granted = enabledPackages.contains(reactApplicationContext.packageName)
+        val granted = flat != null && flat.contains(reactApplicationContext.packageName)
         promise.resolve(granted)
+    }
+
+    @ReactMethod
+    fun requestIgnoreBatteryOptimizations() {
+        val packageName = reactApplicationContext.packageName
+        val pm = reactApplicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager
+
+        if(!pm.isIgnoringBatteryOptimizations(packageName)) {
+            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                data = Uri.parse("package:$packageName")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            reactApplicationContext.startActivity(intent)
+        }
     }
 
     @ReactMethod
@@ -133,11 +150,18 @@ class MediaListenerService : NotificationListenerService() {
 
     override fun onListenerConnected() {
         instance = this
-        mediaSessionManager = getSystemService(MEDIA_SESSION_SERVICE) as MediaSessionManager
+        mediaSessionManager = getSystemService(MEDIA_SESSION_SERVICE) as? MediaSessionManager
         val component = ComponentName(this, MediaListenerService::class.java)
         mediaSessionManager?.addOnActiveSessionsChangedListener(sessionListener, component)
         val currentSessions = mediaSessionManager?.getActiveSessions(component)
         handleSessionChange(currentSessions)
+    }
+
+    override fun onListenerDisconnected() {
+        mediaSessionManager?.removeOnActiveSessionsChangedListener(sessionListener)
+        activeController?.unregisterCallback(controllerCallback)
+        activeController = null
+        instance = null
     }
 
     fun refreshCurrentMediaState() {
@@ -223,8 +247,8 @@ const withMediaSessionMainApplication = (config) =>
     let src = config.modResults.contents;
     if (!src.includes("add(MediaSessionPackage())")) {
       src = src.replace(
-        /PackageList\(this\)\.packages\.apply\s*\{\n([\s\S]*?)\n\s*\}/m,
-        (match, inner) => `PackageList(this).packages.apply {\n${inner}\n          add(MediaSessionPackage())\n        }`
+        "PackageList(this).packages.apply {",
+        "PackageList(this).packages.apply {\n add(MediaSessionPackage())"
       );
     }
     config.modResults.contents = src;
@@ -275,6 +299,15 @@ const withMediaSessionManifest = (config) =>
       });
     }
 
+    const hasBatteryPermission = manifest["uses-permission"].some(
+      (item) => item?.$?.["android:name"] === "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
+    );
+    if (!hasBatteryPermission) {
+      manifest["uses-permission"].push({
+        $: { "android:name": "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" },
+      });
+    }
+
     const app = manifest.application?.[0];
     if (!app) {
       return config;
@@ -290,7 +323,7 @@ const withMediaSessionManifest = (config) =>
           "android:name": ".MediaListenerService",
           "android:label": "Media Listener Service",
           "android:permission": "android.permission.BIND_NOTIFICATION_LISTENER_SERVICE",
-          "android:exported": "false",
+          "android:exported": "true",
         },
         "intent-filter": [
           {
